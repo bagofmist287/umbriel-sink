@@ -40,6 +40,7 @@ namespace umbriel {
     explicit FocusManager(Server& server) : m_server(server) {}
 
     void focusView(View* view, FocusReason reason = FocusReason::Startup);
+    [[nodiscard]] bool projectionFocusRequested(const View* view) const { return m_requestedView == view; }
 
     // A data-device drag suppresses seat keyboard enters while its grab is
     // active. Replay the view whose activation chrome already won once that
@@ -76,6 +77,9 @@ namespace umbriel {
     View* viewAt(double lx, double ly, wlr_surface** surface, double* sx, double* sy, LayerSurface** layer = nullptr);
 
   private:
+    // A pending projection may be requested before the seat/logical desktop
+    // focus can move. Later focus choices invalidate that deferred request.
+    View* m_requestedView = nullptr;
     [[nodiscard]] bool retainCurrentKeyboardFocus();
     void refocusFallback(Output* preferred);
 

@@ -506,7 +506,7 @@ namespace umbriel {
   }
 
   bool View::projectionCommitReady() const {
-    return !m_tiledSizeRequest.has_value() && !m_floating.pendingSize().has_value();
+    return !m_tiledContentRequest.has_value() && !m_floating.pendingSize().has_value();
   }
 
   void View::raiseToTop() {
@@ -1197,9 +1197,19 @@ namespace umbriel {
         .width = width,
         .height = height,
     };
+    m_tiledContentRequest = m_tiledSizeRequest;
   }
 
   bool View::settleTiledSizeRequest() {
+    if (m_tiledContentRequest) {
+      const auto& request = *m_tiledContentRequest;
+      const wlr_box content = committedContentBox();
+      if (serialSettled(m_toplevel->base->current.configure_serial, request.serial)
+          && content.width == request.width
+          && content.height == request.height) {
+        m_tiledContentRequest.reset();
+      }
+    }
     if (!m_tiledSizeRequest) {
       return true;
     }
@@ -2657,7 +2667,11 @@ namespace umbriel {
       return;
     }
     if (m_toplevel->scheduled.width != fullArea.width || m_toplevel->scheduled.height != fullArea.height) {
-      wlr_xdg_toplevel_set_size(m_toplevel, fullArea.width, fullArea.height);
+      if (m_tiled) {
+        requestTiledSize(fullArea.width, fullArea.height);
+      } else {
+        requestFloatingSize(fullArea.width, fullArea.height);
+      }
     }
     if (fullscreenOpeningActive()) {
       // windows_in owns the node position and the presented size until the fade ends; the layout owns only the box
@@ -3050,6 +3064,7 @@ namespace umbriel {
     }
     cancelSizeAnimation();
     m_tiledSizeRequest.reset();
+    m_tiledContentRequest.reset();
     m_layoutPresentationHeld = false;
     cancelPositionAnimation();
     m_decoration.setBordersEnabled(false);
@@ -3961,6 +3976,8 @@ namespace umbriel {
       const int keepX = m_sceneTree->node.x;
       const int keepY = m_sceneTree->node.y;
       m_tiled = false;
+      // Floating placement supersedes the old tile's content size contract.
+      m_tiledContentRequest.reset();
       m_presentedTiledBox = {};
       if (m_workspace != nullptr) {
         wlr_scene_node_reparent(&m_sceneTree->node, m_workspace->viewLayer(m_tiled));

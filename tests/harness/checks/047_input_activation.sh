@@ -51,7 +51,15 @@ if [[ -z ${source_id:-} ]]; then
 fi
 "$UMBRIEL" msg "window-focus:$source_id" > /dev/null
 
-"$POINTER" 1280 720 tap 30 pause 5000 > "$POINTER_LOG" 2>&1 &
+# Establish the keyboard capability before the first key. A brand new virtual
+# keyboard can send its press before the focused client has bound wl_keyboard.
+"$POINTER" 1280 720 mod none pause 5000 > "$POINTER_LOG" 2>&1 &
+for _ in $(seq 40); do
+  grep -q '^keyboard-enter$' "$SOURCE_LOG" && break
+  sleep 0.025
+done
+grep -q '^keyboard-enter$' "$SOURCE_LOG"
+"$POINTER" 1280 720 tap 30 >> "$POINTER_LOG" 2>&1
 for _ in $(seq 40); do
   grep -q '^key 30 1$' "$SOURCE_LOG" && break
   sleep 0.1

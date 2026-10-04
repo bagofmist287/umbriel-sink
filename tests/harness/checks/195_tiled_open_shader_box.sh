@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# A tiled opener stays hidden under the neighbour that vacates its slot, then shows its windows_in shader in the final
-# slot. Neither a collapsed opening box nor windows_move shader composition may replace that effect.
+# A tiled opener shows its windows_in shader in its assigned slot during neighbour reflow, then its committed buffer.
+# Neither a collapsed opening box nor windows_move shader composition may replace that effect.
 set -euo pipefail
 
 readonly IMAGE="$UMBRIEL_RUNTIME_DIR/tiled-open-shader-box.png"
@@ -73,9 +73,9 @@ sample_center() {
     magick "$IMAGE" -alpha off -crop "8x8+$((x - 4))+$((y - 4))" +repage \
       -format '%[fx:round(255*mean.r)] %[fx:round(255*mean.g)] %[fx:round(255*mean.b)]\n' info:
   )
-  if [[ $expect == moving ]]; then
-    if ! ((red > 200 && green < 40 && blue < 40)); then
-      echo "$description slot did not still belong to the neighbour's windows_move shader: $red $green $blue"
+  if [[ $expect == settled ]]; then
+    if ! ((red < 40 && green < 40 && blue > 200)); then
+      echo "$description did not restore its committed buffer after windows_in: $red $green $blue"
       exit 1
     fi
     return 0
@@ -92,16 +92,16 @@ sleep 1.1
 spawn tiled-shader-second
 second=$window
 sleep 0.15
-sample_center "second tiled opener" "$second" moving
-sleep 1.0
 sample_center "second tiled opener" "$second" revealed
+sleep 1.0
+sample_center "second tiled opener" "$second" settled
 sleep 1.0
 
 spawn tiled-shader-third
 third=$window
 sleep 0.15
-sample_center "third tiled opener" "$third" moving
-sleep 1.0
 sample_center "third tiled opener" "$third" revealed
+sleep 1.0
+sample_center "third tiled opener" "$third" settled
 
-echo "each tiled opener stayed hidden through the reflow, then showed its windows_in shader in its final slot"
+echo "each tiled opener showed its windows_in shader during reflow, then restored its committed buffer"

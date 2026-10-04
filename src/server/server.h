@@ -351,6 +351,9 @@ namespace umbriel {
     // effect while another configured output is still awake.
     void wakeDpmsOutputs();
     void refocus() { m_focus.refocus(); }
+    [[nodiscard]] bool projectionFocusRequested(const View* view) const {
+      return m_focus.projectionFocusRequested(view);
+    }
     void refocus(Output* preferred) { m_focus.refocus(preferred); }
     void refocusExplicit(Output* preferred) { m_focus.refocusExplicit(preferred); }
     void reconcileDynamicWorkspaces();

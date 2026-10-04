@@ -883,4 +883,33 @@ UMBRIEL_TEST(aFailedReloadResultCarriesNoChangesOrEffects) {
   CHECK(!result.effects.any());
 }
 
+UMBRIEL_TEST(overviewSinkChangesInvalidateOnlyTheRequiredPresentation) {
+  const Config before;
+  for (int field = 0; field < 3; ++field) {
+    Config after = before;
+    if (field == 0) {
+      ++after.overview.sink.exposureHeight;
+    } else if (field == 1) {
+      ++after.overview.sink.tailHeight;
+    } else {
+      after.overview.sink.tailDecay = 0.25;
+    }
+    const auto effects = ConfigEffects::between(before, after);
+    CHECK(effects.overviewPresentation);
+    CHECK(effects.invalidatesOverview());
+    CHECK(!effects.workspaceLayout);
+    CHECK(!effects.viewChrome);
+    CHECK(ConfigChange::between(before, after).overview);
+  }
+  Config animation = before;
+  animation.animation.overview.sink.mode = umbriel::OverviewSinkMode::Smooth;
+  const auto animationEffects = ConfigEffects::between(before, animation);
+  CHECK(animationEffects.animation);
+  CHECK(animationEffects.invalidatesOverview());
+  Config depth = before;
+  depth.appearance.sink.visibleDepth = 4;
+  CHECK(ConfigEffects::between(before, depth).overviewPresentation);
+  CHECK(ConfigEffects::between(before, depth).invalidatesOverview());
+}
+
 int main() { return RUN_TESTS(); }

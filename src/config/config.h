@@ -29,6 +29,12 @@ namespace umbriel {
     Horizontal,
   };
 
+  enum class OverviewSinkMode : uint8_t {
+    Performance,
+    Balanced,
+    Smooth,
+  };
+
   enum class ModifierKey {
     Super,
     Alt,
@@ -593,6 +599,10 @@ namespace umbriel {
 
       struct Overview {
         std::optional<AnimationShaderSource> shader;
+        struct Sink {
+          OverviewSinkMode mode = OverviewSinkMode::Balanced;
+          bool operator==(const Sink&) const = default;
+        } sink;
         bool enabled = true;
         int durationMs = 250;
         AnimationCurve curve{.easing = Easing::Spring, .spring = {.damping = 1.0, .stiffness = 800.0}};
@@ -645,6 +655,13 @@ namespace umbriel {
     } animation;
 
     struct Overview {
+      // Final Overview logical pixels; independent of desktop Sink depth styles.
+      struct Sink {
+        int exposureHeight = 24;
+        int tailHeight = 12;
+        double tailDecay = 0.5;
+        bool operator==(const Sink&) const = default;
+      } sink;
       // Workspace scale when fully zoomed out.
       double zoom = 0.5;
       // Touchpad travel and wheel accumulation in the overview, by the physical direction of the movement rather

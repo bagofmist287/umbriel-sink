@@ -1174,6 +1174,22 @@ namespace umbriel {
         readCurveKey(
             section, "workspace_curve", "animation.overview.workspace_curve", animation.overview.workspaceCurve
         );
+        section.sub("sink", [&](Section& sink) {
+          const toml::node* node = sink.take("mode");
+          if (node == nullptr) {
+            return;
+          }
+          const auto value = node->value<std::string>();
+          if (value == "performance") {
+            animation.overview.sink.mode = OverviewSinkMode::Performance;
+          } else if (value == "balanced") {
+            animation.overview.sink.mode = OverviewSinkMode::Balanced;
+          } else if (value == "smooth") {
+            animation.overview.sink.mode = OverviewSinkMode::Smooth;
+          } else {
+            warnAt(node->source(), "ignoring animation.overview.sink.mode (expected performance, balanced, or smooth)");
+          }
+        });
       });
       s.sub("scratchpad", [&](Section& section) {
         readShader(section, animation.scratchpad);
@@ -1315,6 +1331,20 @@ namespace umbriel {
 
     void readOverview(Section& root, Config& loaded) {
       root.sub("overview", [&](Section& s) {
+        s.sub("sink", [&](Section& sink) {
+          sink.integer("exposure_height", 1, 256, loaded.overview.sink.exposureHeight)
+              .integer("tail_height", 0, 256, loaded.overview.sink.tailHeight);
+          const toml::node* node = sink.take("tail_decay");
+          if (node == nullptr) {
+            return;
+          }
+          const auto value = node->value<double>();
+          if (!value || !std::isfinite(*value) || *value <= 0.0 || *value >= 1.0) {
+            warnAt(node->source(), "ignoring overview.sink.tail_decay (expected a finite number between 0 and 1)");
+            return;
+          }
+          loaded.overview.sink.tailDecay = *value;
+        });
         s.real("zoom", 0.1, 0.75, loaded.overview.zoom)
             .real("scroll_factor_horizontal", 0.1, 10.0, loaded.overview.scrollFactorHorizontal)
             .real("scroll_factor_vertical", 0.1, 10.0, loaded.overview.scrollFactorVertical)

@@ -180,7 +180,10 @@ namespace umbriel {
         .layerEffects = sceneBlur || before.layerRules != after.layerRules,
         .animation = before.animation != after.animation,
         .input = before.input != after.input || before.hotCorners != after.hotCorners,
-        .overviewPresentation = before.overview != after.overview || before.colors != after.colors,
+        .overviewPresentation = before.overview != after.overview
+            || before.colors != after.colors
+            || before.animation.overview.sink != after.animation.overview.sink
+            || before.appearance.sink.visibleDepth != after.appearance.sink.visibleDepth,
         .internalUi = before.colors != after.colors || before.general.modKey != after.general.modKey,
     };
   }

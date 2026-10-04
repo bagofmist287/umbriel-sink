@@ -78,8 +78,10 @@ is_black() {
 spawn tiled-close-survivor 0xFFFF0000
 sleep 0.25
 spawn tiled-close-static 0xFF0000FF
-closing=$window
 sleep 0.25
+# The map listing can precede its first arrange. Sample the settled slot used
+# by the actual snapshot, rather than the opener's temporary map coordinates.
+closing=$("$UMBRIEL" windows --json | jq -c '.[] | select(.title == "tiled-close-static")')
 
 id=$(jq -r .id <<< "$closing")
 x=$(jq -r .x <<< "$closing")

@@ -117,6 +117,9 @@ namespace umbriel {
     [[nodiscard]] bool containsSunk(const View* view) const { return m_sinkStack.contains(view); }
     [[nodiscard]] std::optional<size_t> sinkDepth(const View* view) const { return m_sinkStack.depth(view); }
     [[nodiscard]] size_t sinkCount() const { return m_sinkStack.size(); }
+    // Unscaled source dimensions retained by the desktop projection. Overview
+    // must not inherit its depth scale or its pre-Sink layout position.
+    [[nodiscard]] std::optional<wlr_box> sinkSourceBox(const View* view) const;
     // Bottom-to-top order. Transfers append this sequence to the destination,
     // preserving the source's internal LIFO order while retaining the
     // destination stack below it.
@@ -233,6 +236,7 @@ namespace umbriel {
       wl_event_source* deadline = nullptr;
       bool pulling = false;
       bool focusOnComplete = false;
+      bool overviewPull = false;
       bool animationDone = false;
       bool barrierTimedOut = false;
     };

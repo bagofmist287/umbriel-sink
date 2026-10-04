@@ -600,7 +600,12 @@ namespace umbriel {
     }
 
     bool actionWindowSink(Server& server, const Keybind& /*bind*/, std::string* error) {
-      View* view = focusedWindow(server);
+      Overview* overview = server.overview();
+      const bool inOverview = overview != nullptr && overview->active();
+      if (inOverview && (!overview->interactive() || overview->dragging())) {
+        return reject(error, "window-sink cannot run during Overview closing or dragging");
+      }
+      View* view = inOverview ? overview->actionView() : focusedWindow(server);
       Workspace* workspace = view != nullptr ? view->workspace() : nullptr;
       if (view == nullptr || workspace == nullptr) {
         return reject(error, "window-sink requires a focused workspace window");
@@ -611,8 +616,13 @@ namespace umbriel {
       return true;
     }
 
-    bool actionWindowPull(Server& server, const Keybind& /*bind*/, std::string* /*error*/) {
-      if (Workspace* workspace = activeWorkspace(server)) {
+    bool actionWindowPull(Server& server, const Keybind& /*bind*/, std::string* error) {
+      Overview* overview = server.overview();
+      const bool inOverview = overview != nullptr && overview->active();
+      if (inOverview && (!overview->interactive() || overview->dragging())) {
+        return reject(error, "window-pull cannot run during Overview closing or dragging");
+      }
+      if (Workspace* workspace = inOverview ? overview->actionWorkspace() : activeWorkspace(server)) {
         (void)workspace->pull();
       }
       return true;

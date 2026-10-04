@@ -92,3 +92,67 @@ color presentation. Shortcut badges use `colors.overview.badge`.
 
 Configure overview colors under
 [`[colors.overview]`](appearance.md#overview-colors).
+
+### Sink in Overview
+
+Sink cards are centred on their workspace preview and
+places them behind tiled, floating and Fullscreen foreground cards. The first
+`appearance.sink.visible_depth` entries expose selectable tops; deeper entries
+form a bounded decorative tail. A short window only accepts clicks within its
+actual content height. Selecting an entrance unwinds and closes Overview.
+
+The following settings control this presentation:
+
+```toml
+[overview.sink]
+exposure_height = 24
+tail_height = 12
+tail_decay = 0.5
+
+[animation.overview.sink]
+mode = "balanced"
+```
+
+Heights use logical pixels in the final Overview view. `exposure_height` accepts
+integers from 1 to 256; `tail_height` accepts 0 to 256. `tail_decay` must be a
+finite number strictly between 0 and 1. Height values outside the range are
+clamped with a diagnostic; invalid decay values or animation modes retain their
+defaults. Modes are `performance`, `balanced`, and `smooth` (default `balanced`);
+there is no separate Sink duration. The former `type` key and its values are no
+longer supported. The geometry uses `appearance.sink.visible_depth` for the number
+of full entrances, with a bounded tail beyond that depth.
+
+`performance` snaps Sink size, expansion and foreground offset while the ordinary
+Overview zoom continues. `balanced` interpolates Sink size, expansion and
+foreground offset on the shared Overview progress; independent depth opacity and
+self blur switch off on the open command and return on the close command.
+`smooth` also interpolates independent depth opacity and self-blur strength on
+that same progress. The modes do not stagger layers. All animated components
+finish with Overview and follow the same state function when reversing.
+Global or Overview animation disable snaps the transition in every mode.
+
+At fully open Overview, all modes retain unscaled Sink source dimensions and
+cancel its independent depth opacity and self blur. The foreground moves down
+by half the stack's exposed height. A smooth deep tail fades from/to its hidden
+desktop state; it still has no selectable entrance. Self-blur interpolation has
+an effect only when `appearance.sink.self_blur` is enabled. Performance costs
+vary with window sizes, hardware and configured effects; these names describe
+which transitions run, rather than a measured frame-rate guarantee.
+
+Overview reserves configured Sink capacity for every workspace, including empty
+ones. Local removal does not move neighbouring previews. The reservation also
+includes source geometry, chrome and animation bounds; navigation and drop
+coordinates share its layout.
+
+`window-sink` and `window-pull` also work while Overview is open. They use the
+logical focused window or active workspace on the pointer's output and retain
+Overview. Pull preserves the workspace's LIFO order and each window's tiled or
+floating placement. Sink/Pull are ignored during card dragging or closing.
+
+Local stack changes push cards apart or fill the gap from their current positions,
+using `animation.windows_move`; they keep the predicted workspace gaps and do not
+restart the opening zoom. `performance`, or disabled global, Overview or move animation,
+snaps this local change. Selecting a Sink entrance by click or shortcut unwinds
+to that window and immediately starts closing. Keyboard input remains withheld
+until Overview releases the scene and the window's requested content commits
+(with the existing bounded Pull deadline for unresponsive clients).

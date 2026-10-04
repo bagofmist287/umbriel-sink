@@ -628,6 +628,8 @@ namespace umbriel {
       int height = 0;
     };
     std::optional<TiledSizeRequest> m_tiledSizeRequest;
+    // The content barrier survives cancellation/replacement of layout motion.
+    std::optional<TiledSizeRequest> m_tiledContentRequest;
     float m_layoutMotionDirection = 1.0F;
     bool m_tiledOpeningDeferred = false;
     // Inset a built-in windows_in style starts an opener at, interpolated to rest by the fade: a popin or zoom scale

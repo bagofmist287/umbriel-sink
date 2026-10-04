@@ -193,3 +193,72 @@ The relevant checks are:
   for cards staying off a neighbouring output, overview included.
 - [`tests/unit/presented_crop.cpp`](../../tests/unit/presented_crop.cpp) for the
   presented-crop math shared with window presentation.
+
+## P5 Sink geometry foundation
+
+The P5 geometry/configuration foundation lives in `overview/sink_layout.*` and
+is wired into card geometry, ordering, entrance hit testing and shared progress.
+User behaviour and configuration are documented under
+[Sink in Overview](../user/workspaces-overview.md#sink-in-overview).
+
+`overviewSinkExtent` computes full entrances plus a bounded geometric tail;
+`overviewSinkBudget` reserves the configured capacity even for an empty stack.
+Boxes retain double precision until scene rounding. The entrance helper returns
+zero for decorative deep layers and caps a short window's entrance at its real
+height. The owner must still intersect an entrance with occlusion and output clips.
+
+`overviewCurveRange` provides conservative analytic envelopes for steps from
+rest, using Bezier control-point convex hulls and damped-spring energy. It does
+not bound arbitrary spring release velocity: navigation already exposes
+`springDisplacementBound`, which its owning animation must use. Local reflow
+retargets use the actual current geometry; `overviewTweenBounds` encloses that
+transition rather than assuming a previous target was reached. All animated Sink
+layers and the foreground share the same progress.
+
+`OverviewStripLayout` is an immutable per-epoch set of axis offsets. It maps
+fractional workspace indices to coordinates and back, including endpoint
+overscroll, so drawing and navigation can share nonuniform gaps. The live
+Overview freezes native source overhangs and configured Sink capacity per output
+at state/workspace changes. Metrics project those frozen values at the current
+zoom; ordinary arrange and local removals leave them intact. Backgrounds, cards,
+workspace gaps, pointer navigation, drop coordinates and spring-tail bounds use
+the same strip conversion. Unscaled shadow padding is reserved separately.
+
+`Workspace::sinkSourceBox` exposes retained unscaled dimensions without changing
+membership. `restackCards` sorts both the input vector and scene nodes, placing
+deep Sink layers first and every foreground layer above them. A decorative body
+occludes pointer input rather than forwarding it to an entry behind it.
+
+Sink layer progress uses the common `m_progress`, without a depth phase delay.
+`animation.overview.sink.mode` selects `performance`, `balanced` (default), or
+`smooth`; no legacy type aliases are accepted. Performance snaps size and
+expansion at the command boundary. The other modes interpolate from the fitted
+centred desktop projection dimensions to unscaled source dimensions using
+bounded shared progress. Balanced toggles independent depth opacity and self
+blur at the command boundary; smooth interpolates opacity and effect depth on
+the same progress. The same mapping in either direction prevents a reversal
+from changing size or effects. Style progress is clamped to [0,1] while
+positional overshoot remains covered by the frozen curve budget. A smooth deep
+layer fades from/to zero desktop opacity; it never gains an entrance. There is
+no independent effect timer, and settled Overview disables the static self blur.
+
+`beginSinkChange/endSinkChange` wrap stack mutations, including multi-Pull
+Unwind and source commit changes. They capture current drawn boxes once, arrange
+the resulting stack, then apply a decaying correction in source coordinates
+using the move curve/duration. A nested transaction shares the same initial
+boxes. Neither the common Overview clock nor the per-output reservation restarts.
+Sink source widths stay centred throughout reflow; all cards remain clipped to
+their output. Closing selection takes precedence over local movement. Residual
+corrections shrink with the shared progress toward zero, even when windows_move
+is longer than closing; reversal uses that same continuous mapping. The final
+Card meets desktop geometry without waiting for the local timeline.
+
+Workspace desktop projections remain inert throughout Overview. Pull still owns
+the hidden real tree until its content barrier settles, but logical focus can
+change immediately without delivering seat input. View keeps the last tiled
+content request separately from cancellable layout motion; repeated Pull into
+the same scheduled size therefore cannot erase an uncommitted configure. A
+floating placement change supersedes that tile request. Deferred Overview Pull
+focus is delivered only if it remains FocusManager's latest requested target,
+including a new desktop request while the old logical focus is still held.
+Teardown restores desktop projection visibility before normal focus restoration.

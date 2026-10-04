@@ -352,7 +352,9 @@ namespace umbriel {
       return false;
     }
     Server* server = m_group->server();
-    if (server->overview() != nullptr && server->overview()->active()) {
+    Overview* overview = server->overview();
+    const bool inOverview = overview != nullptr && overview->active();
+    if (inOverview && (!overview->interactive() || overview->dragging())) {
       return false;
     }
     if (ScratchpadManager* scratchpad = server->scratchpadManager();
@@ -378,8 +380,15 @@ namespace umbriel {
     }
     assert(!(layoutMember && floatingMember));
 
+    if (inOverview) {
+      overview->beginSinkChange(this);
+    }
+
     const wlr_box sourceBox = view->presentedBox();
     SinkPresentation& presentation = ensureSinkPresentation(view, sourceBox);
+    if (sourceBox.width > 0 && sourceBox.height > 0) {
+      presentation.sourceBox = sourceBox;
+    }
     if (presentation.deadline != nullptr) {
       wl_event_source_remove(presentation.deadline);
       presentation.deadline = nullptr;
@@ -394,7 +403,7 @@ namespace umbriel {
 
     View* replacement = m_focusedView == view ? focusReplacementForRemoval(view) : nullptr;
     if (layoutMember) {
-      layoutDetach(view, true);
+      layoutDetach(view, !inOverview || overview->animateSinkChanges());
     } else {
       std::erase(m_floatingStack, view);
     }
@@ -417,18 +426,34 @@ namespace umbriel {
         server->clearKeyboardFocus();
       }
     }
+    if (inOverview) {
+      if (!overview->animateSinkChanges()) {
+        snapVisible(m_focusedView);
+      }
+      arrange(overview->animateSinkChanges());
+    }
     server->scheduleIpcWindowsEvent();
     server->scheduleIpcWorkspacesEvent();
     server->refreshOutputPolicies();
     server->updateIdleInhibit();
+    if (inOverview) {
+      overview->endSinkChange(this);
+    }
     return true;
   }
 
   View* Workspace::pull(bool focus) {
-    View* view = m_sinkStack.pop();
+    View* view = m_sinkStack.empty() ? nullptr : m_sinkStack.entries().back();
     if (view == nullptr) {
       return nullptr;
     }
+    Overview* overview = m_group->server()->overview();
+    const bool inOverview = overview != nullptr && overview->active();
+    if (inOverview) {
+      overview->beginSinkChange(this);
+    }
+    [[maybe_unused]] View* popped = m_sinkStack.pop();
+    assert(popped == view);
     assert(view->m_sunk);
     assert(view->workspace() == this);
     view->m_sunk = false;
@@ -447,18 +472,30 @@ namespace umbriel {
           scrolling->activateColumn(scrolling->columnOf(view), scrollViewportExtent());
         }
       }
-      arrange(true);
+      arrange(!inOverview || overview->animateSinkChanges());
     } else {
       syncFloatingStack(view);
       view->restoreFloatingPosition();
       syncViewPresentation(view);
     }
     beginPullPresentation(view, focus);
+    if (focus && inOverview) {
+      // Choose the logical Overview target immediately. The seat remains
+      // withheld, and the ordinary owner still waits for its content commit.
+      m_group->server()->focusView(view, FocusReason::SinkPull);
+      if (!overview->animateSinkChanges()) {
+        snapVisible(view);
+        arrange(false);
+      }
+    }
     refreshSinkPresentation(true);
     m_group->server()->scheduleIpcWindowsEvent();
     m_group->server()->scheduleIpcWorkspacesEvent();
     m_group->server()->refreshOutputPolicies();
     m_group->server()->updateIdleInhibit();
+    if (inOverview) {
+      overview->endSinkChange(this);
+    }
     return view;
   }
 
@@ -466,14 +503,25 @@ namespace umbriel {
     if (view == nullptr || !m_sinkStack.contains(view)) {
       return false;
     }
+    Overview* overview = m_group->server()->overview();
+    const bool inOverview = overview != nullptr && overview->active();
+    if (inOverview) {
+      overview->beginSinkChange(this);
+    }
     while (!m_sinkStack.empty()) {
       View* pulled = pull(m_sinkStack.entries().back() == view);
       if (pulled == view) {
         if (SinkPresentation* presentation = sinkPresentationFor(view)) {
           presentation->focusOnComplete = true;
         }
+        if (inOverview) {
+          overview->endSinkChange(this);
+        }
         return true;
       }
+    }
+    if (inOverview) {
+      overview->endSinkChange(this);
     }
     return false;
   }
@@ -481,6 +529,11 @@ namespace umbriel {
   void Workspace::removeFromSinkStack(View* view) {
     if (view == nullptr) {
       return;
+    }
+    Overview* overview = m_group != nullptr ? m_group->server()->overview() : nullptr;
+    const bool inOverview = containsSunk(view) && overview != nullptr && overview->active();
+    if (inOverview) {
+      overview->beginSinkChange(this);
     }
     const bool removed = m_sinkStack.remove(view);
     if (removed) {
@@ -497,6 +550,9 @@ namespace umbriel {
     if (removed) {
       refreshSinkPresentation(true);
     }
+    if (inOverview) {
+      overview->endSinkChange(this);
+    }
   }
 
   Workspace::SinkPresentation* Workspace::sinkPresentationFor(const View* view) const {
@@ -504,6 +560,14 @@ namespace umbriel {
       return presentation->view == view;
     });
     return found != m_sinkPresentations.end() ? found->get() : nullptr;
+  }
+
+  std::optional<wlr_box> Workspace::sinkSourceBox(const View* view) const {
+    if (!containsSunk(view)) {
+      return std::nullopt;
+    }
+    const SinkPresentation* presentation = sinkPresentationFor(view);
+    return presentation != nullptr ? std::optional{presentation->sourceBox} : std::nullopt;
   }
 
   Workspace::SinkPresentation& Workspace::ensureSinkPresentation(View* view, const wlr_box& sourceBox) {
@@ -545,8 +609,10 @@ namespace umbriel {
     const auto& animation = config().animation;
     const auto& move = animation.windowsMove;
     const auto& sink = config().appearance.sink;
-    const bool shouldAnimate = animate && animation.enabled && move.enabled && move.durationMs > 0;
-    const bool workspaceVisible = m_active || m_inSwitchTransition;
+    const Overview* overview = m_group->server()->overview();
+    const bool inOverview = overview != nullptr && overview->active();
+    const bool shouldAnimate = !inOverview && animate && animation.enabled && move.enabled && move.durationMs > 0;
+    const bool workspaceVisible = !inOverview && (m_active || m_inSwitchTransition);
     std::vector<std::pair<View*, uint64_t>> completedPulls;
     for (const auto& presentation : m_sinkPresentations) {
       if (!presentation->pulling) {
@@ -600,8 +666,11 @@ namespace umbriel {
       return;
     }
     ++presentation->generation;
+    const Overview* overview = m_group->server()->overview();
+    const bool inOverview = overview != nullptr && overview->active();
     presentation->pulling = true;
-    presentation->focusOnComplete = presentation->focusOnComplete || focus;
+    presentation->overviewPull = inOverview;
+    presentation->focusOnComplete = !inOverview && (presentation->focusOnComplete || focus);
     presentation->animationDone = false;
     presentation->barrierTimedOut = false;
     view->m_projectionOwnsPresentation = true;
@@ -610,8 +679,8 @@ namespace umbriel {
     const wlr_box target = view->targetBox();
     const auto& animation = config().animation;
     const auto& move = animation.windowsMove;
-    const bool shouldAnimate = animation.enabled && move.enabled && move.durationMs > 0;
-    presentation->projection->setEnabled(m_active);
+    const bool shouldAnimate = !inOverview && animation.enabled && move.enabled && move.durationMs > 0;
+    presentation->projection->setEnabled(m_active && !inOverview);
     presentation->projection->setSelfBlurEnabled(false);
     if (shouldAnimate) {
       presentation->projection->animateTo(target, 1.0F, move.durationMs, move.curve);
@@ -657,9 +726,17 @@ namespace umbriel {
       if (geometry.width > 0
           && geometry.height > 0
           && (presentation->sourceBox.width != geometry.width || presentation->sourceBox.height != geometry.height)) {
+        Overview* overview = m_group->server()->overview();
+        const bool inOverview = overview != nullptr && overview->active();
+        if (inOverview) {
+          overview->beginSinkChange(this);
+        }
         presentation->sourceBox.width = geometry.width;
         presentation->sourceBox.height = geometry.height;
         refreshSinkPresentation(true);
+        if (inOverview) {
+          overview->endSinkChange(this);
+        }
       }
     }
   }
@@ -685,7 +762,8 @@ namespace umbriel {
     if (presentation == nullptr || !presentation->pulling || presentation->generation != generation) {
       return;
     }
-    const bool focus = presentation->focusOnComplete;
+    const bool focus = presentation->focusOnComplete
+        && (!presentation->overviewPull || m_group->server()->projectionFocusRequested(view));
     if (presentation->deadline != nullptr) {
       wl_event_source_remove(presentation->deadline);
       presentation->deadline = nullptr;
@@ -697,7 +775,10 @@ namespace umbriel {
     if (view->mapped() && view->workspace() == this) {
       syncViewPresentation(view);
       if (focus) {
-        m_group->server()->focusView(view, FocusReason::SinkPull);
+        const Overview* overview = m_group->server()->overview();
+        if (overview == nullptr || !overview->active()) {
+          m_group->server()->focusView(view, FocusReason::SinkPull);
+        }
       }
     }
   }
@@ -1117,7 +1198,7 @@ namespace umbriel {
             && fullArea.height > 0
             && (view->toplevel()->scheduled.width != fullArea.width
                 || view->toplevel()->scheduled.height != fullArea.height)) {
-          wlr_xdg_toplevel_set_size(view->toplevel(), fullArea.width, fullArea.height);
+          view->requestTiledSize(fullArea.width, fullArea.height);
         }
         if (animate) {
           view->beginResizeAnimation(fullArea.width, fullArea.height, true);

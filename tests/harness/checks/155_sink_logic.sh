@@ -94,7 +94,7 @@ before=$(windows | jq -c '.[] | select(.title == "sink-b") | [.x,.y,.w,.h]')
 wait_for_query 'any(.[]; .title == "sink-b" and .sunk and .floating and .base_placement == "floating")' \
   "floating sink lost base placement"
 "$UMBRIEL" msg window-pull > /dev/null
-wait_for_query 'any(.[]; .title == "sink-b" and (.sunk == false) and .floating)' "floating pull failed"
+wait_for_query 'any(.[]; .title == "sink-b" and (.sunk == false) and .floating and .focused)' "floating pull did not finish its focus handoff"
 after=$(windows | jq -c '.[] | select(.title == "sink-b") | [.x,.y,.w,.h]')
 if [[ $before != "$after" ]]; then
   echo "floating geometry changed across sink/pull: before=$before after=$after"

@@ -4,6 +4,7 @@
 #include "core/animation.h"
 #include "layout/drop_target.h"
 #include "overview/navigation.h"
+#include "overview/sink_layout.h"
 #include "scene/hint_rect.h"
 #include "scene/surface_blur.h"
 
@@ -11,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 #include <wayland-server-core.h>
@@ -123,6 +125,13 @@ namespace umbriel {
     // how far the zoom has come.
     [[nodiscard]] static double settledZoom();
     [[nodiscard]] bool dragging() const { return m_dragCard != nullptr || m_middlePressed; }
+    [[nodiscard]] Workspace* actionWorkspace() const { return preferredWorkspace(); }
+    [[nodiscard]] View* actionView() const { return liveTargetView(); }
+    // Workspace mutations may arrange and focus synchronously. Capture the
+    // currently drawn boxes before any of those callbacks update the cards.
+    void beginSinkChange(Workspace* workspace);
+    void endSinkChange(Workspace* workspace);
+    [[nodiscard]] bool animateSinkChanges() const;
 
   private:
     static void onNavigationDeviceDestroyed(wl_listener* listener, void* data);
@@ -155,6 +164,10 @@ namespace umbriel {
       wlr_scene_tree* tree = nullptr;
       std::unique_ptr<WindowProjection> projection;
       wlr_box box{}; // content box in layout coordinates
+      AnimatedValue reflow{1.0};
+      MonotonicEasing reflowCurve;
+      OverviewBox correction;
+      double correctionProgress = 1.0;
       wlr_scene_tree* badge = nullptr;
       wlr_scene_rect* badgeRect = nullptr;
       wlr_scene_buffer* badgeText = nullptr;
@@ -217,6 +230,11 @@ namespace umbriel {
       // touchpad releases all animate this one value; a gesture in flight snaps it to follow the fingers.
       AnimatedValue rowScroll;
       size_t activeWorkspaceIndex = 0;
+      // Native overhangs are measured once in desktop units. Sink capacity and
+      // unscaled shadow padding are reserved in Overview logical pixels.
+      std::vector<OverviewOverhang> reservedNative;
+      OverviewOverhang reservedSink;
+      double reservedShadow = 0.0;
     };
 
     // Workspace preview placement for one output at the current progress. Previews
@@ -234,6 +252,8 @@ namespace umbriel {
       int baseX = 0;
       int baseY = 0;
       int gap = 0;
+      std::vector<OverviewOverhang> reserved;
+      std::optional<OverviewStripLayout> strip;
     };
 
     static void onDesktopSurfaceCommit(wl_listener* listener, void* data);
@@ -252,6 +272,10 @@ namespace umbriel {
     bool beginPresentation();
     void buildState();
     void populateCards(OutputState& state);
+    // Keep the vector used for input in the same order as the scene nodes,
+    // including cards created or moved after opening.
+    void restackCards(OutputState& state);
+    void freezeLayout(OutputState& state);
     Card* createCard(OutputState& state, View* view, size_t workspaceIndex);
     void snapshotCardForClose(Card& card);
     void destroyCard(Card* card);
@@ -274,6 +298,8 @@ namespace umbriel {
     void applyProgress();
     void layoutOutput(OutputState& state);
     void layoutCard(Card& card, const PreviewMetrics& metrics, double workspaceScroll, const View* liveTarget);
+    [[nodiscard]] double sinkForegroundOffset(const Workspace* workspace) const;
+    [[nodiscard]] double sinkProgress() const;
     // The window a focus or close action would act on right now: the focused view of the active workspace on the
     // output holding the cursor. Null when that workspace is empty, which is also when those actions do nothing.
     [[nodiscard]] View* liveTargetView() const;
@@ -328,6 +354,13 @@ namespace umbriel {
     bool m_cardPresentationDirty = false;
     bool m_gestureOpenedHere = false;
     bool m_shortcutsDirty = true;
+    Workspace* m_sinkChangeWorkspace = nullptr;
+    size_t m_sinkChangeDepth = 0;
+    struct SinkChangeBox {
+      View* view = nullptr;
+      wlr_box box{};
+    };
+    std::vector<SinkChangeBox> m_sinkChangeBoxes;
     std::string m_shortcutInput;
     std::vector<ShortcutAssignment> m_shortcutAssignments;
     size_t m_shortcutLabelCapacity = 0;

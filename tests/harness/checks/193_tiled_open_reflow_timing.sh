@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# A tiled opener stays hidden while established neighbours reflow on windows_move, then runs its own windows_in in the
-# settled slot. The neighbour must be mid-reflow with no opener visible, and the opener mid-fade once it has settled.
+# A tiled opener runs windows_in in its assigned slot while established neighbours reflow on windows_move.
+# The neighbour and opener must both be in motion early; the longer opening fade continues after the reflow settles.
 # An opener that takes the whole width through default_maximize reflows them on that same clock.
 set -euo pipefail
 
@@ -81,11 +81,20 @@ blue_at() {
     -format '%[fx:round(255*mean.b)]\n' info:
 }
 
+sleep_until_ms() {
+  local remaining=$(( $1 - $(date +%s%3N) )) delay
+  if ((remaining > 0)); then
+    printf -v delay '%d.%03d' $((remaining / 1000)) $((remaining % 1000))
+    sleep "$delay"
+  fi
+}
+
 spawn tiled-open-survivor 0xFFFF0000
 sleep 1.7
 before=$(red_width)
 
 spawn tiled-opener 0xFF0000FF
+admitted_ms=$(date +%s%3N)
 opener=$window
 # IPC has the final layout origin but may still expose the committed client size. Master places this opener against
 # the output's right edge, so derive a point well inside its final slot from that edge.
@@ -95,11 +104,11 @@ sleep 0.3
 early=$(red_width)
 early_blue=$(blue_at "$opener_x" "$opener_y")
 
-sleep 1.1
+sleep_until_ms "$((admitted_ms + 900))"
 mid=$(red_width)
 mid_blue=$(blue_at "$opener_x" "$opener_y")
 
-sleep 1.1
+sleep_until_ms "$((admitted_ms + 1800))"
 final=$(red_width)
 final_blue=$(blue_at "$opener_x" "$opener_y")
 
@@ -111,16 +120,16 @@ if ((early <= final + 20 || early >= before - 20)); then
   echo "survivor was not mid-windows_move at 0.3 s: before=$before early=$early final=$final"
   exit 1
 fi
-if ((early_blue > 10)); then
-  echo "opener was visible during the neighbour reflow: $early_blue"
+if ((early_blue < 20 || early_blue > 220)); then
+  echo "opener did not run windows_in during the neighbour reflow: $early_blue"
   exit 1
 fi
 if ((mid < final - 20 || mid > final + 20)); then
-  echo "survivor had not settled before the opener's windows_in: mid=$mid final=$final"
+  echo "survivor had not settled during the longer windows_in: mid=$mid final=$final"
   exit 1
 fi
 if ! ((mid_blue >= 40 && mid_blue <= 220 && final_blue > 220)); then
-  echo "opener did not run its own windows_in after the reflow: mid=$mid_blue final=$final_blue"
+  echo "opener's longer windows_in did not finish independently: mid=$mid_blue final=$final_blue"
   exit 1
 fi
 
@@ -140,4 +149,4 @@ if ((maximized_early <= maximized_final + 20 || maximized_early >= settled - 20)
   exit 1
 fi
 
-echo "tiled opener stayed hidden through the neighbour reflow, ran windows_in in its settled slot, and a maximized opener reflowed that neighbour on windows_move too"
+echo "tiled opener ran windows_in during neighbour reflow, and a maximized opener reflowed that neighbour on windows_move too"

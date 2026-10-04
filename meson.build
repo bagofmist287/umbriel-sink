@@ -549,6 +549,7 @@ pure_sources = files(
   'src/server/drm_policy.cpp',
   'src/scene/cheatsheet_rows.cpp',
   'src/overview/shortcut_labels.cpp',
+  'src/overview/sink_layout.cpp',
   'src/view/border_ring.cpp',
   'src/view/floating.cpp',
 )

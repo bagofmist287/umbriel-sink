@@ -108,7 +108,10 @@ wait_unmapped() {
 
 color_pixels() {
   local image=$1 expression=$2
-  magick "$image" -alpha off -fx "$expression ? 1 : 0" -format '%[fx:round(mean*w*h)]\n' info:
+  # Shader phases cover broad regions. Sample their colours at quarter size
+  # and retain full-resolution bounds below; four full-frame -fx passes per
+  # sample otherwise spend the check's timeout in postprocessing.
+  magick "$image" -alpha off -sample 25% -fx "$expression ? 1 : 0" -format '%[fx:round(mean*w*h*16)]\n' info:
 }
 
 reload_config() {

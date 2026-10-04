@@ -174,9 +174,58 @@ action window-sink
 wait_window 'length == 3 and all(.[]; .sunk) and any(.[]; .app_id == "zenity" and .sink_depth == 0 and .xwayland and .floating) and any(.[]; .app_id == "firefox" and .sink_depth == 1) and any(.[]; .app_id == "foot" and .sink_depth == 2)' 'mixed application Top 2/Horizon'
 sleep 1
 grim -o "$OUTPUT_NAME" "$RUN_DIR/mixed-stack.png"
+if [[ ${UMBRIEL_APP_OVERVIEW_V2:-0} == 1 ]]; then
+  # Opt-in v2 exercise, using the same real Wayland/Xwayland applications.
+  sed -i 's/enabled = false/enabled = true/' "$CONFIG"
+  cat >> "$CONFIG" <<'EOF'
+
+[animation.overview]
+duration_ms = 350
+curve = "linear"
+[animation.overview.sink]
+type = "wave"
+[overview]
+zoom = 0.5
+shortcuts = false
+EOF
+  action config-reload
+  "$UMBRIEL_BINARY" subscribe overview > "$RUN_DIR/overview-events.jsonl" &
+  action overview-open
+  sleep 0.5
+  grim -o "$OUTPUT_NAME" "$RUN_DIR/mixed-overview.png"
+  action window-pull
+  wait_window 'any(.[]; .id == $id and (.sunk == false) and .focused)' 'Overview floating Pull' --arg id "$dialog_id"
+  action window-sink
+  wait_window 'any(.[]; .id == $id and .sunk and .sink_depth == 0)' 'Overview floating re-Sink' --arg id "$dialog_id"
+  action window-pull
+  action window-pull
+  action window-pull
+  wait_window 'length == 3 and all(.[]; .sunk == false)' 'Overview mixed Pull'
+  focus "$browser_id"
+  action window-toggle-fullscreen
+  action window-sink
+  wait_window 'any(.[]; .id == $id and .sunk)' 'Overview Fullscreen Sink' --arg id "$browser_id"
+  sleep 0.5
+  grim -o "$OUTPUT_NAME" "$RUN_DIR/fullscreen-overview.png"
+  # The Sink top is centred horizontally, 12px above the preview's top.
+  read -r output_x output_y output_w output_h < <(
+    "$UMBRIEL_BINARY" outputs --json | jq -r '.[0] as $o | ($o.modes[] | select(.current)) as $m | "\($o.position.x) \($o.position.y) \(($m.width / $o.scale) | round) \(($m.height / $o.scale) | round)"'
+  )
+  pointer_client="$(dirname "$UMBRIEL_BINARY")/tests/pointer-client"
+  "$pointer_client" "$output_w" "$output_h" move "$((output_x + output_w / 2))" "$((output_y + output_h / 4 - 8))" click 272
+  wait_window 'any(.[]; .id == $id and (.sunk == false) and .focused)' 'Overview Fullscreen selection' --arg id "$browser_id"
+  for _ in $(seq 100); do
+    jq -se 'last | .data.open == false' "$RUN_DIR/overview-events.jsonl" >/dev/null && break
+    sleep 0.025
+  done
+  jq -se 'last | .data.open == false' "$RUN_DIR/overview-events.jsonl" >/dev/null
+  action window-toggle-fullscreen
+  echo 'Overview v2: real mixed LIFO, local re-Sink, Fullscreen selection and close passed'
+else
 action window-pull
 action window-pull
 action window-pull
+fi
 wait_window 'length == 3 and all(.[]; .sunk == false)' 'mixed application unwind'
 echo 'mixed application LIFO and Horizon passed'
 

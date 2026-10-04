@@ -8,6 +8,7 @@ readonly CLIENT="${UMBRIEL_SUBSURFACE_CLIENT:-./build-debug/tests/subsurface-cli
 readonly POINTER="${UMBRIEL_POINTER_CLIENT:-./build-debug/tests/pointer-client}"
 readonly OUTPUT_MANAGEMENT="${UMBRIEL_OUTPUT_MANAGEMENT_CLIENT:-./build-debug/tests/output-management-client}"
 readonly BTN_LEFT=272
+readonly OVERVIEW_EVENTS="$UMBRIEL_RUNTIME_DIR/sink-system-overview-events.log"
 
 if [[ ! -x $CLIENT || ! -x $POINTER || ! -x $OUTPUT_MANAGEMENT ]]; then
   echo "sink system clients are not built"
@@ -54,7 +55,8 @@ sink_named() {
 }
 
 # A known floating box makes its settled Overview card deterministic on the
-# first 1280x720 output: default zoom 0.5 places its centre at (470, 305).
+# first 1280x720 output: zoom 0.5 centres Sink on x=640, and the
+# default 24-pixel entrance spans y=168..192 independently of its old x/y.
 cat >> "$UMBRIEL_CONFIG" <<'EOF'
 
 [[window_rule]]
@@ -64,6 +66,7 @@ default_floating_size_px = { width = 400, height = 300 }
 default_position = { x = 100, y = 100, anchor = "top_left" }
 EOF
 "$UMBRIEL" msg config-reload > /dev/null
+"$UMBRIEL" subscribe overview > "$OVERVIEW_EVENTS" &
 
 "$UMBRIEL" msg workspace-switch:1/HEADLESS-1 > /dev/null
 spawn_client sink-overview
@@ -74,9 +77,16 @@ read -r overview_x overview_y < <(
   "$UMBRIEL" outputs --json \
     | jq -r '.[] | select(.name == "HEADLESS-1") | "\(.position.x) \(.position.y)"'
 )
-"$POINTER" 2560 720 move "$((overview_x + 470))" "$((overview_y + 305))" click "$BTN_LEFT"
+"$POINTER" 2560 720 move "$((overview_x + 640))" "$((overview_y + 174))" click "$BTN_LEFT"
 wait_for_query 'any(.[]; .title == "sink-overview" and (.sunk == false) and .focused)' \
   "selecting a Sunk Overview card did not unwind it"
+# Logical focus now changes at selection time. Await actual teardown before
+# starting unrelated desktop Sink/hotplug operations.
+for _ in $(seq 100); do
+  if jq -se 'last | .data.open == false' "$OVERVIEW_EVENTS" > /dev/null; then break; fi
+  sleep 0.025
+done
+jq -se 'last | .data.open == false' "$OVERVIEW_EVENTS" > /dev/null
 "$UMBRIEL" msg "window-close:$(id_for sink-overview)" > /dev/null
 wait_for_query 'all(.[]; .title != "sink-overview")' "overview client did not close"
 

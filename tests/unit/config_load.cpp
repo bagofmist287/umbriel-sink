@@ -3179,4 +3179,102 @@ UMBRIEL_TEST(packagedAnimationDefaultsMatchCompiledDefaults) {
   CHECK(store.config().animation == umbriel::Config{}.animation);
 }
 
+UMBRIEL_TEST(overviewSinkParametersLoadWithIndependentDefaultsAndModes) {
+  const TempConfig file;
+  ConfigStore& store = umbriel::configStore();
+  file.write("");
+  CHECK(store.load(file.path().c_str()));
+  CHECK_EQ(store.config().overview.sink.exposureHeight, 24);
+  CHECK_EQ(store.config().overview.sink.tailHeight, 12);
+  CHECK_EQ(store.config().overview.sink.tailDecay, 0.5);
+  CHECK(store.config().animation.overview.sink.mode == umbriel::OverviewSinkMode::Balanced);
+  for (const auto& [name, type] : std::array{
+           std::pair{"performance", umbriel::OverviewSinkMode::Performance},
+           std::pair{"balanced", umbriel::OverviewSinkMode::Balanced},
+           std::pair{"smooth", umbriel::OverviewSinkMode::Smooth}
+       }) {
+    file.write(
+        std::format(
+            R"(
+[overview.sink]
+exposure_height = 36
+tail_height = 18
+tail_decay = 0.25
+[animation.overview]
+duration_ms = 700
+curve = "linear"
+[animation.overview.sink]
+mode = "{}"
+)",
+            name
+        )
+    );
+    CHECK(store.load(file.path().c_str()));
+    CHECK(store.diagnostics().empty());
+    CHECK_EQ(store.config().overview.sink.exposureHeight, 36);
+    CHECK_EQ(store.config().overview.sink.tailHeight, 18);
+    CHECK_EQ(store.config().overview.sink.tailDecay, 0.25);
+    CHECK(store.config().animation.overview.sink.mode == type);
+    CHECK_EQ(store.config().animation.overview.durationMs, 700);
+    CHECK_EQ(store.config().appearance.sink.visibleDepth, 2);
+  }
+}
+
+UMBRIEL_TEST(overviewSinkInvalidNumbersAndModesDiagnoseAndRetainDefaults) {
+  const TempConfig file;
+  ConfigStore& store = umbriel::configStore();
+  for (const auto* decay : {"0", "1", "-1", "inf", "nan", "\"bad\""}) {
+    file.write(
+        std::format(
+            R"(
+[overview.sink]
+exposure_height = 0
+tail_height = 999
+tail_decay = {}
+[animation.overview.sink]
+mode = "spring"
+duration_ms = 500
+)",
+            decay
+        )
+    );
+    CHECK(store.load(file.path().c_str()));
+    CHECK_EQ(store.config().overview.sink.exposureHeight, 1);
+    CHECK_EQ(store.config().overview.sink.tailHeight, 256);
+    CHECK_EQ(store.config().overview.sink.tailDecay, 0.5);
+    CHECK(store.config().animation.overview.sink.mode == umbriel::OverviewSinkMode::Balanced);
+    CHECK(containsDiagnostic(store, "overview.sink.exposure_height"));
+    CHECK(containsDiagnostic(store, "overview.sink.tail_height"));
+    CHECK(containsDiagnostic(store, "overview.sink.tail_decay"));
+    CHECK(containsDiagnostic(store, "animation.overview.sink.mode"));
+    CHECK(containsDiagnostic(store, "unknown key animation.overview.sink.duration_ms"));
+  }
+  file.write(R"(
+[overview.sink]
+exposure_height = "bad"
+tail_height = -1
+[animation.overview.sink]
+mode = 3
+)");
+  CHECK(store.load(file.path().c_str()));
+  CHECK_EQ(store.config().overview.sink.exposureHeight, 24);
+  CHECK_EQ(store.config().overview.sink.tailHeight, 0);
+  CHECK(containsDiagnostic(store, "animation.overview.sink.mode"));
+}
+
+UMBRIEL_TEST(overviewSinkOldTypeIsNotAnAlias) {
+  const TempConfig file;
+  ConfigStore& store = umbriel::configStore();
+  file.write("[animation.overview.sink]\ntype = \"wave\"\n");
+  CHECK(store.load(file.path().c_str()));
+  CHECK(store.config().animation.overview.sink.mode == umbriel::OverviewSinkMode::Balanced);
+  CHECK(containsDiagnostic(store, "unknown key animation.overview.sink.type"));
+  for (const auto* mode : {"none", "sync", "wave"}) {
+    file.write(std::format("[animation.overview.sink]\nmode = \"{}\"\n", mode));
+    CHECK(store.load(file.path().c_str()));
+    CHECK(store.config().animation.overview.sink.mode == umbriel::OverviewSinkMode::Balanced);
+    CHECK(containsDiagnostic(store, "animation.overview.sink.mode"));
+  }
+}
+
 int main() { return RUN_TESTS(); }

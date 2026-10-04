@@ -199,6 +199,14 @@ blur_optimized = false
 # the overview after a short delay.
 # Overview: https://docs.noctalia.dev/umbriel/workspaces-overview/
 # Animation: https://docs.noctalia.dev/umbriel/animation/
+[overview.sink]
+exposure_height = 24 # Logical pixels of each selectable top in the final preview
+tail_height = 12 # Maximum combined decorative tail beyond visible_depth
+tail_decay = 0.5
+
+[animation.overview.sink]
+mode = "balanced" # performance: snap; balanced: size tween; smooth: size, opacity and self blur
+
 [hot_corners.top_left]
 enabled = true
 delay_ms = 500

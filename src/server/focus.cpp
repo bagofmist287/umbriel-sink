@@ -63,10 +63,16 @@ namespace umbriel {
       }
     }
     if (view->projectionOwnsPresentation()) {
+      m_requestedView = view;
+      const bool inOverview = m_server.overview() != nullptr && m_server.overview()->active();
       if (Workspace* workspace = view->workspace()) {
-        workspace->deferProjectionFocus(view);
+        if (!inOverview || reason == FocusReason::OverviewSelection) {
+          workspace->deferProjectionFocus(view);
+        }
       }
-      return;
+      if (!inOverview) {
+        return;
+      }
     }
 
     // PointerHover gate: reject focus entirely when revealing would exceed the configured max scroll fraction. Must run
@@ -99,6 +105,7 @@ namespace umbriel {
     if (!view->onActiveWorkspace() && !view->pinned()) {
       return;
     }
+    m_requestedView = view;
     if (m_server.scratchpadManager() != nullptr) {
       m_server.scratchpadManager()->noteFocus(view);
     }
@@ -356,6 +363,7 @@ namespace umbriel {
   }
 
   void FocusManager::clearKeyboardFocus() {
+    m_requestedView = nullptr;
     deactivateViews(nullptr);
     wlr_seat* seat = m_server.seat()->wlr();
     // Overview and other compositor-owned states must not leave an xdg popup
